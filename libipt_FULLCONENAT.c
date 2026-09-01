@@ -45,7 +45,7 @@ static const struct xt_option_entry FULLCONENAT_opts[] = {
 
 static void parse_to(const char *orig_arg, struct nf_nat_ipv4_multi_range_compat *mr)
 {
-	char *arg, *dash, *error;
+	char *arg, *dash;
 	const struct in_addr *ip;
 
 	arg = strdup(orig_arg);
