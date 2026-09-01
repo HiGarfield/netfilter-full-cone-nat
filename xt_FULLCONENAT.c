@@ -62,6 +62,17 @@ static inline u32 reciprocal_scale(u32 val, u32 ep_ro)
 }
 #endif
 
+/* nf_conntrack_register_notifier()/nf_conntrack_unregister_notifier()
+ * became per-netns in Linux 3.3 (commit 70e9942, "make event callback
+ * registration per-netns"); before that they took no struct net *. */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 3, 0)
+#define fullconenat_ct_notifier_register(net, nb)   nf_conntrack_register_notifier(nb)
+#define fullconenat_ct_notifier_unregister(net, nb) nf_conntrack_unregister_notifier(nb)
+#else
+#define fullconenat_ct_notifier_register(net, nb)   nf_conntrack_register_notifier(net, nb)
+#define fullconenat_ct_notifier_unregister(net, nb) nf_conntrack_unregister_notifier(net, nb)
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
 
 static inline int nf_ct_netns_get(struct net *net, u8 nfproto) { return 0; }
@@ -1347,14 +1358,14 @@ static int fullconenat_tg_check(const struct xt_tgchk_param *par)
      * replaces an existing notifier; only call it when none is
      * registered in this netns, so we never clobber other users. */
     if (!READ_ONCE(par->net->ct.nf_conntrack_event_cb)) {
-      nf_conntrack_register_notifier(par->net, &ct_event_notifier);
+      fullconenat_ct_notifier_register(par->net, &ct_event_notifier);
       fn->notifier_registered = 1;
       pr_debug("xt_FULLCONENAT: fullconenat_tg_check(): ct_event_notifier registered\n");
     } else {
       printk("xt_FULLCONENAT: warning: a conntrack notifier is already registered in this netns. Disable active GC for mappings.\n");
     }
 #else
-    if (nf_conntrack_register_notifier(par->net, &ct_event_notifier) == 0) {
+    if (fullconenat_ct_notifier_register(par->net, &ct_event_notifier) == 0) {
       fn->notifier_registered = 1;
       pr_debug("xt_FULLCONENAT: fullconenat_tg_check(): ct_event_notifier registered\n");
     } else {
@@ -1383,7 +1394,7 @@ static void fullconenat_tg_destroy(const struct xt_tgdtor_param *par)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) && !defined(CONFIG_NF_CONNTRACK_CHAIN_EVENTS)
     nf_conntrack_unregister_notifier(par->net);
 #else
-    nf_conntrack_unregister_notifier(par->net, &ct_event_notifier);
+    fullconenat_ct_notifier_unregister(par->net, &ct_event_notifier);
 #endif
     fn->notifier_registered = 0;
 
