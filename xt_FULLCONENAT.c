@@ -48,6 +48,12 @@
 #define NF_NAT_RANGE_PROTO_RANDOM_FULLY (1 << 4)
 #endif
 
+/* prandom_u32() was introduced in Linux 3.8; older kernels only have
+ * random32(), which is the very same helper under the old name. */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
+#define prandom_u32() random32()
+#endif
+
 /* reciprocal_scale() was introduced in Linux 3.14 (include/linux/kernel.h). */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)
 static inline u32 reciprocal_scale(u32 val, u32 ep_ro)
