@@ -161,6 +161,8 @@ FULLCONENAT_print(const void *ip, const struct xt_entry_target *target,
 		printf(" to:%s", xtables_ip6addr_to_numeric(&r->min_addr.in6));
 		if (memcmp(&r->min_addr, &r->max_addr, sizeof(r->min_addr)))
 			printf("-%s", xtables_ip6addr_to_numeric(&r->max_addr.in6));
+		if (r->flags & NF_NAT_RANGE_PERSISTENT)
+			printf(" persistent");
 	}
 
 	if (r->flags & NF_NAT_RANGE_PROTO_SPECIFIED) {
@@ -168,8 +170,6 @@ FULLCONENAT_print(const void *ip, const struct xt_entry_target *target,
 		printf("%hu", ntohs(r->min_proto.tcp.port));
 		if (r->max_proto.tcp.port != r->min_proto.tcp.port)
 			printf("-%hu", ntohs(r->max_proto.tcp.port));
-		if (r->flags & NF_NAT_RANGE_PERSISTENT)
-			printf(" persistent");
 	}
 
 	if (r->flags & NF_NAT_RANGE_PROTO_RANDOM)
