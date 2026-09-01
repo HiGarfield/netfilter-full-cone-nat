@@ -165,9 +165,12 @@ static unsigned int fullconenat_net_id;
 static int fullconenat_net_id;
 #endif
 
+static void fullconenat_net_exit(struct net *net);
+
 static struct pernet_operations fullconenat_net_ops = {
   .id   = &fullconenat_net_id,
   .size = sizeof(struct fullconenat_net),
+  .exit = fullconenat_net_exit,
 };
 
 static DEFINE_MUTEX(nf_ct_net_event_lock);
@@ -1400,34 +1403,54 @@ static int fullconenat_tg_check(const struct xt_tgchk_param *par)
   return 0;
 }
 
-static void fullconenat_tg_destroy(const struct xt_tgdtor_param *par)
+/* Drop a reference to the conntrack event notifier of this netns and
+ * unregister it once the last target is gone.
+ * Called with force = true from the pernet exit hook, where the
+ * notifier has to go unconditionally: the conntrack core must not keep
+ * a pointer into this module once it is unloaded, nor into a netns
+ * that is being torn down. */
+static void fullconenat_notifier_put(struct net *net, bool force)
 {
   struct fullconenat_net *fn;
 
+  mutex_lock(&nf_ct_net_event_lock);
+
+  fn = net_generic(net, fullconenat_net_id);
+  if (!force)
+    fn->refcount--;
+
+  if (fn->notifier_registered && (force || fn->refcount <= 0)) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) && !defined(CONFIG_NF_CONNTRACK_CHAIN_EVENTS)
+    nf_conntrack_unregister_notifier(net);
+#else
+    fullconenat_ct_notifier_unregister(net, &ct_event_notifier);
+#endif
+    fn->notifier_registered = 0;
+
+    pr_debug("xt_FULLCONENAT: fullconenat_notifier_put(): ct_event_notifier unregistered\n");
+  }
+
+  mutex_unlock(&nf_ct_net_event_lock);
+}
+
+static void fullconenat_tg_destroy(const struct xt_tgdtor_param *par)
+{
   mutex_lock(&nf_ct_net_event_lock);
 
   tg_refer_count--;
 
   pr_debug("xt_FULLCONENAT: fullconenat_tg_destroy(): tg_refer_count is now %d\n", tg_refer_count);
 
-  fn = net_generic(par->net, fullconenat_net_id);
-  fn->refcount--;
-  /* only tear the notifier down once the last target of this netns is
-   * gone, otherwise the remaining rules lose their active GC. */
-  if (fn->refcount <= 0 && fn->notifier_registered) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) && !defined(CONFIG_NF_CONNTRACK_CHAIN_EVENTS)
-    nf_conntrack_unregister_notifier(par->net);
-#else
-    fullconenat_ct_notifier_unregister(par->net, &ct_event_notifier);
-#endif
-    fn->notifier_registered = 0;
-
-    pr_debug("xt_FULLCONENAT: fullconenat_tg_destroy(): ct_event_notifier unregistered\n");
-  }
-
   mutex_unlock(&nf_ct_net_event_lock);
 
+  fullconenat_notifier_put(par->net, false);
+
   nf_ct_netns_put(par->net, par->family);
+}
+
+static void fullconenat_net_exit(struct net *net)
+{
+  fullconenat_notifier_put(net, true);
 }
 
 static struct xt_target tg_reg[] __read_mostly = {
@@ -1474,6 +1497,7 @@ static int __init fullconenat_tg_init(void)
     if (wq) {
       cancel_delayed_work_sync(&gc_worker_wk);
       destroy_workqueue(wq);
+      wq = NULL;
     }
     printk("xt_FULLCONENAT: failed to register pernet subsystem: %d\n", ret);
     return ret;
@@ -1533,16 +1557,22 @@ static void fullconenat_tg_exit(void)
   nf_nat_masquerade_ipv4_unregister_notifier();
 #endif
 
+  /* drop the per-netns notifiers first: unregistering the pernet
+   * subsystem runs the exit hook for every netns, so afterwards no
+   * ct_event_cb() can queue work on the workqueue we are destroying.
+   * Leaving it registered could also make the conntrack core call
+   * into this module after it has been unloaded. */
+  unregister_pernet_subsys(&fullconenat_net_ops);
+
   if (wq) {
     cancel_delayed_work_sync(&gc_worker_wk);
     flush_workqueue(wq);
     destroy_workqueue(wq);
+    wq = NULL;
   }
 
   handle_dying_tuples();
   destroy_mappings();
-
-  unregister_pernet_subsys(&fullconenat_net_ops);
 }
 
 module_init(fullconenat_tg_init);
