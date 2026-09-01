@@ -449,6 +449,10 @@ static void find_leastused_ip6(const u16 zone, const struct nf_nat_range *range,
     if (!full_range) {
       minip = ntohl(range->min_addr.all[i]);
       maxip = ntohl(range->max_addr.all[i]);
+      if (unlikely(maxip < minip)) {
+        /* invalid range from userspace; fall back to the lower bound. */
+        maxip = minip;
+      }
       dist  = maxip - minip + 1;
     } else {
       minip = 0;
@@ -1138,6 +1142,10 @@ static __be32 find_leastused_ip(const u16 zone, const struct nf_nat_ipv4_range *
 
   minip = ntohl(range->min_ip);
   maxip = ntohl(range->max_ip);
+  if (unlikely(maxip < minip)) {
+    /* invalid range from userspace; fall back to the lower bound. */
+    maxip = minip;
+  }
   dist  = maxip - minip + 1;
 
   return (__be32) htonl(minip + reciprocal_scale(j, dist));
