@@ -331,8 +331,15 @@ static uint16_t find_appropriate_port6(struct net *net, const u16 zone, const ui
   struct nat_mapping6* mapping = NULL;
 
   if (range->flags & NF_NAT_RANGE_PROTO_SPECIFIED) {
+    uint16_t max = be16_to_cpu((range->max_proto).udp.port);
     min = be16_to_cpu((range->min_proto).udp.port);
-    range_size = be16_to_cpu((range->max_proto).udp.port) - min + 1;
+    if (unlikely(max < min)) {
+      /* invalid range from userspace; fall back to the default range. */
+      min = 1024;
+      range_size = 65535 - min + 1;
+    } else {
+      range_size = max - min + 1;
+    }
   } else {
     /* minimum port is 1024. same behavior as default linux NAT. */
     min = 1024;
@@ -1017,8 +1024,15 @@ static uint16_t find_appropriate_port(struct net *net, const u16 zone, const uin
   struct nat_mapping* mapping = NULL;
 
   if (range->flags & NF_NAT_RANGE_PROTO_SPECIFIED) {
+    uint16_t max = be16_to_cpu((range->max).udp.port);
     min = be16_to_cpu((range->min).udp.port);
-    range_size = be16_to_cpu((range->max).udp.port) - min + 1;
+    if (unlikely(max < min)) {
+      /* invalid range from userspace; fall back to the default range. */
+      min = 1024;
+      range_size = 65535 - min + 1;
+    } else {
+      range_size = max - min + 1;
+    }
   } else {
     /* minimum port is 1024. same behavior as default linux NAT. */
     min = 1024;
