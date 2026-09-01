@@ -156,7 +156,13 @@ struct fullconenat_net {
   int notifier_registered;
 };
 
+/* pernet_operations.id is an unsigned int * since Linux 4.10; on older
+ * kernels it is a plain int *. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 static unsigned int fullconenat_net_id;
+#else
+static int fullconenat_net_id;
+#endif
 
 static struct pernet_operations fullconenat_net_ops = {
   .id   = &fullconenat_net_id,
