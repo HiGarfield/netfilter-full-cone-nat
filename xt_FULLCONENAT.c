@@ -1569,6 +1569,11 @@ static void fullconenat_tg_exit(void)
    * into this module after it has been unloaded. */
   unregister_pernet_subsys(&fullconenat_net_ops);
 
+  /* ct_event_cb() runs inside an rcu read-side critical section, so
+   * wait for any in-flight callback to return before taking the
+   * workqueue away from under it. */
+  synchronize_rcu();
+
   if (wq) {
     cancel_delayed_work_sync(&gc_worker_wk);
     flush_workqueue(wq);
