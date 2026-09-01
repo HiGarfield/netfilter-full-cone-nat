@@ -993,6 +993,7 @@ static int ct_event_cb(unsigned int events, struct nf_ct_event *item) {
   struct nf_conntrack_tuple *ct_tuple_reply, *ct_tuple_original;
   uint8_t protonum;
   struct tuple_list *dying_tuple_item;
+  struct workqueue_struct *gc_wq;
 
   ct = item->ct;
   /* we handle only conntrack destroy events */
@@ -1025,8 +1026,11 @@ static int ct_event_cb(unsigned int events, struct nf_ct_event *item) {
 
   spin_unlock_bh(&dying_tuple_list_lock);
 
-  if (wq != NULL)
-    queue_delayed_work(wq, &gc_worker_wk, msecs_to_jiffies(100));
+  /* sample it once: module exit clears wq concurrently, and re-reading
+   * it here could hand a NULL pointer to queue_delayed_work(). */
+  gc_wq = READ_ONCE(wq);
+  if (gc_wq != NULL)
+    queue_delayed_work(gc_wq, &gc_worker_wk, msecs_to_jiffies(100));
 
   return 0;
 }
@@ -1497,7 +1501,7 @@ static int __init fullconenat_tg_init(void)
     if (wq) {
       cancel_delayed_work_sync(&gc_worker_wk);
       destroy_workqueue(wq);
-      wq = NULL;
+      WRITE_ONCE(wq, NULL);
     }
     printk("xt_FULLCONENAT: failed to register pernet subsystem: %d\n", ret);
     return ret;
@@ -1544,7 +1548,7 @@ err:
   if (wq) {
     cancel_delayed_work_sync(&gc_worker_wk);
     destroy_workqueue(wq);
-    wq = NULL;
+    WRITE_ONCE(wq, NULL);
   }
   return ret;
 }
@@ -1578,7 +1582,7 @@ static void fullconenat_tg_exit(void)
     cancel_delayed_work_sync(&gc_worker_wk);
     flush_workqueue(wq);
     destroy_workqueue(wq);
-    wq = NULL;
+    WRITE_ONCE(wq, NULL);
   }
 
   handle_dying_tuples();
