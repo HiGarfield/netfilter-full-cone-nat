@@ -49,6 +49,14 @@
 #define NF_NAT_RANGE_PROTO_RANDOM_FULLY (1 << 4)
 #endif
 
+/* reciprocal_scale() was introduced in Linux 3.14 (include/linux/kernel.h). */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)
+static inline u32 reciprocal_scale(u32 val, u32 ep_ro)
+{
+  return (u32)(((u64)val * ep_ro) >> 32);
+}
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
 
 static inline int nf_ct_netns_get(struct net *net, u8 nfproto) { return 0; }
