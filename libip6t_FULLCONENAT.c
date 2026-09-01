@@ -12,6 +12,10 @@
 #define NF_NAT_RANGE_PROTO_RANDOM_FULLY (1 << 4)
 #endif
 
+#ifndef NF_NAT_RANGE_PERSISTENT
+#define NF_NAT_RANGE_PERSISTENT (1 << 3)
+#endif
+
 enum {
 	O_TO_PORTS = 0,
 	O_RANDOM,
