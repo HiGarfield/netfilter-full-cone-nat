@@ -999,7 +999,7 @@ static __be32 get_device_ip(const struct net_device* dev) {
   }
 
   rcu_read_lock();
-  in_dev = dev->ip_ptr;
+  in_dev = __in_dev_get_rcu(dev);
   if (in_dev == NULL) {
     rcu_read_unlock();
     return 0;
