@@ -1292,7 +1292,13 @@ static unsigned int fullconenat_tg(struct sk_buff *skb, const struct xt_action_p
 
 static int fullconenat_tg_check(const struct xt_tgchk_param *par)
 {
-  nf_ct_netns_get(par->net, par->family);
+  int ret;
+
+  ret = nf_ct_netns_get(par->net, par->family);
+  if (ret < 0) {
+    printk("xt_FULLCONENAT: warning: nf_ct_netns_get failed for family %d\n", par->family);
+    return ret;
+  }
 
   mutex_lock(&nf_ct_net_event_lock);
 
