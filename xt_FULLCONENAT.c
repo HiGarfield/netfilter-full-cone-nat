@@ -54,6 +54,15 @@
 #define prandom_u32() random32()
 #endif
 
+/* READ_ONCE()/WRITE_ONCE() were introduced in Linux 3.13; earlier
+ * kernels only offer ACCESS_ONCE(). */
+#ifndef WRITE_ONCE
+#define WRITE_ONCE(x, val) (ACCESS_ONCE(x) = (val))
+#endif
+#ifndef READ_ONCE
+#define READ_ONCE(x) ACCESS_ONCE(x)
+#endif
+
 /* reciprocal_scale() was introduced in Linux 3.14 (include/linux/kernel.h). */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)
 static inline u32 reciprocal_scale(u32 val, u32 ep_ro)
