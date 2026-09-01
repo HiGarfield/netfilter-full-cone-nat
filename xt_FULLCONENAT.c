@@ -1541,6 +1541,11 @@ static int __init fullconenat_tg_init(void)
 
 err:
   unregister_pernet_subsys(&fullconenat_net_ops);
+  if (wq) {
+    cancel_delayed_work_sync(&gc_worker_wk);
+    destroy_workqueue(wq);
+    wq = NULL;
+  }
   return ret;
 }
 
