@@ -76,6 +76,10 @@ static void parse_to(const char *orig_arg, struct nf_nat_range *r)
 	} else
 		r->max_addr = r->min_addr;
 
+	if (memcmp(&r->min_addr, &r->max_addr, sizeof(r->min_addr)) > 0)
+		xtables_error(PARAMETER_PROBLEM, "Invalid IP range \"%s\"\n",
+			   orig_arg);
+
 	free(arg);
 }
 

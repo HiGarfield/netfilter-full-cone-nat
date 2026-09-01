@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <getopt.h>
+#include <arpa/inet.h>
 #include <xtables.h>
 #include <limits.h> /* INT_MAX in ip_tables.h */
 #include <linux/netfilter_ipv4/ip_tables.h>
@@ -75,6 +76,10 @@ static void parse_to(const char *orig_arg, struct nf_nat_ipv4_multi_range_compat
 		mr->range[0].max_ip = ip->s_addr;
 	} else
 		mr->range[0].max_ip = mr->range[0].min_ip;
+
+	if (ntohl(mr->range[0].min_ip) > ntohl(mr->range[0].max_ip))
+		xtables_error(PARAMETER_PROBLEM, "Invalid IP range \"%s\"\n",
+			   orig_arg);
 
 	free(arg);
 }
