@@ -130,7 +130,21 @@ struct notifier_block ct_event_notifier;
 struct nf_ct_event_notifier ct_event_notifier;
 #endif
 int tg_refer_count = 0;
-int ct_event_notifier_registered = 0;
+
+/* per-netns conntrack event notifier state: each netns that has an
+ * active FULLCONENAT rule registers its own notifier, so rules in
+ * different netns do not clobber each other and are torn down
+ * independently. */
+struct fullconenat_net {
+  int notifier_registered;
+};
+
+static unsigned int fullconenat_net_id;
+
+static struct pernet_operations fullconenat_net_ops = {
+  .id   = &fullconenat_net_id,
+  .size = sizeof(struct fullconenat_net),
+};
 
 static DEFINE_MUTEX(nf_ct_net_event_lock);
 
@@ -1292,6 +1306,7 @@ static unsigned int fullconenat_tg(struct sk_buff *skb, const struct xt_action_p
 
 static int fullconenat_tg_check(const struct xt_tgchk_param *par)
 {
+  struct fullconenat_net *fn;
   int ret;
 
   ret = nf_ct_netns_get(par->net, par->family);
@@ -1315,19 +1330,31 @@ static int fullconenat_tg_check(const struct xt_tgchk_param *par)
 #else
     ct_event_notifier.fcn = ct_event_cb;
 #endif
+  }
 
+  /* register a conntrack destroy notifier for this netns only.
+   * a netns without any active target never holds a notifier. */
+  fn = net_generic(par->net, fullconenat_net_id);
+  if (fn->notifier_registered == 0) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) && !defined(CONFIG_NF_CONNTRACK_CHAIN_EVENTS)
+    /* since 5.15, nf_conntrack_register_notifier() returns void and
+     * replaces an existing notifier; only call it when none is
+     * registered in this netns, so we never clobber other users. */
     if (!READ_ONCE(par->net->ct.nf_conntrack_event_cb)) {
       nf_conntrack_register_notifier(par->net, &ct_event_notifier);
+      fn->notifier_registered = 1;
+      pr_debug("xt_FULLCONENAT: fullconenat_tg_check(): ct_event_notifier registered\n");
+    } else {
+      printk("xt_FULLCONENAT: warning: a conntrack notifier is already registered in this netns. Disable active GC for mappings.\n");
+    }
 #else
     if (nf_conntrack_register_notifier(par->net, &ct_event_notifier) == 0) {
-#endif
-      ct_event_notifier_registered = 1;
+      fn->notifier_registered = 1;
       pr_debug("xt_FULLCONENAT: fullconenat_tg_check(): ct_event_notifier registered\n");
     } else {
       printk("xt_FULLCONENAT: warning: failed to register a conntrack notifier. Disable active GC for mappings.\n");
     }
-
+#endif
   }
 
   mutex_unlock(&nf_ct_net_event_lock);
@@ -1337,24 +1364,24 @@ static int fullconenat_tg_check(const struct xt_tgchk_param *par)
 
 static void fullconenat_tg_destroy(const struct xt_tgdtor_param *par)
 {
+  struct fullconenat_net *fn;
+
   mutex_lock(&nf_ct_net_event_lock);
 
   tg_refer_count--;
 
   pr_debug("xt_FULLCONENAT: fullconenat_tg_destroy(): tg_refer_count is now %d\n", tg_refer_count);
 
-  if (tg_refer_count == 0) {
-    if (ct_event_notifier_registered) {
+  fn = net_generic(par->net, fullconenat_net_id);
+  if (fn->notifier_registered) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) && !defined(CONFIG_NF_CONNTRACK_CHAIN_EVENTS)
-      nf_conntrack_unregister_notifier(par->net);
+    nf_conntrack_unregister_notifier(par->net);
 #else
-      nf_conntrack_unregister_notifier(par->net, &ct_event_notifier);
+    nf_conntrack_unregister_notifier(par->net, &ct_event_notifier);
 #endif
-      ct_event_notifier_registered = 0;
+    fn->notifier_registered = 0;
 
-      pr_debug("xt_FULLCONENAT: fullconenat_tg_destroy(): ct_event_notifier unregistered\n");
-
-    }
+    pr_debug("xt_FULLCONENAT: fullconenat_tg_destroy(): ct_event_notifier unregistered\n");
   }
 
   mutex_unlock(&nf_ct_net_event_lock);
@@ -1399,6 +1426,16 @@ static int __init fullconenat_tg_init(void)
   wq = create_singlethread_workqueue("xt_FULLCONENAT");
   if (wq == NULL) {
     printk("xt_FULLCONENAT: warning: failed to create workqueue\n");
+  }
+
+  ret = register_pernet_subsys(&fullconenat_net_ops);
+  if (unlikely(ret)) {
+    if (wq) {
+      cancel_delayed_work_sync(&gc_worker_wk);
+      destroy_workqueue(wq);
+    }
+    printk("xt_FULLCONENAT: failed to register pernet subsystem: %d\n", ret);
+    return ret;
   }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0)
@@ -1456,6 +1493,8 @@ static void fullconenat_tg_exit(void)
 
   handle_dying_tuples();
   destroy_mappings();
+
+  unregister_pernet_subsys(&fullconenat_net_ops);
 }
 
 module_init(fullconenat_tg_init);
