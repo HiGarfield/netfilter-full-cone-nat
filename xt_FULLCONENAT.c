@@ -192,7 +192,19 @@ static struct nat_mapping6* allocate_mapping6(const union nf_inet_addr *int_addr
 }
 
 static void add_original_tuple_to_mapping6(struct nat_mapping6 *mapping, const struct nf_conntrack_tuple* original_tuple) {
-  struct nat_mapping_original_tuple *item = kmalloc(sizeof(struct nat_mapping_original_tuple), GFP_ATOMIC);
+  struct nat_mapping_original_tuple *item;
+  struct list_head *iter;
+
+  /* skip if this tuple is already linked to this mapping,
+   * otherwise every packet of the same conntrack would duplicate
+   * the entry and inflate refer_count. */
+  list_for_each(iter, &mapping->original_tuple_list) {
+    item = list_entry(iter, struct nat_mapping_original_tuple, node);
+    if (nf_ct_tuple_equal(&item->tuple, original_tuple))
+      return;
+  }
+
+  item = kmalloc(sizeof(struct nat_mapping_original_tuple), GFP_ATOMIC);
   if (item == NULL) {
     pr_debug("xt_FULLCONENAT: ERROR: kmalloc() for nat_mapping_original_tuple failed.\n");
     return;
@@ -627,7 +639,19 @@ static struct nat_mapping* allocate_mapping(const __be32 int_addr, const uint16_
 }
 
 static void add_original_tuple_to_mapping(struct nat_mapping *mapping, const struct nf_conntrack_tuple* original_tuple) {
-  struct nat_mapping_original_tuple *item = kmalloc(sizeof(struct nat_mapping_original_tuple), GFP_ATOMIC);
+  struct nat_mapping_original_tuple *item;
+  struct list_head *iter;
+
+  /* skip if this tuple is already linked to this mapping,
+   * otherwise every packet of the same conntrack would duplicate
+   * the entry and inflate refer_count. */
+  list_for_each(iter, &mapping->original_tuple_list) {
+    item = list_entry(iter, struct nat_mapping_original_tuple, node);
+    if (nf_ct_tuple_equal(&item->tuple, original_tuple))
+      return;
+  }
+
+  item = kmalloc(sizeof(struct nat_mapping_original_tuple), GFP_ATOMIC);
   if (item == NULL) {
     pr_debug("xt_FULLCONENAT: ERROR: kmalloc() for nat_mapping_original_tuple failed.\n");
     return;
