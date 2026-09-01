@@ -504,6 +504,9 @@ static unsigned int fullconenat_tg6(struct sk_buff *skb, const struct xt_action_
   net = nf_ct_net(ct);
   zone = nf_ct_zone(ct);
 
+  /* nf_nat_setup_info() reads the whole range, so clear every field
+   * (e.g. base_proto) instead of leaving stack garbage in it. */
+  memset(&newrange, 0, sizeof(newrange));
   newrange.flags       = range->flags | NF_NAT_RANGE_MAP_IPS;
   newrange.min_proto   = range->min_proto;
   newrange.max_proto   = range->max_proto;
@@ -1182,8 +1185,9 @@ static unsigned int fullconenat_tg(struct sk_buff *skb, const struct xt_action_p
   net = nf_ct_net(ct);
   zone = nf_ct_zone(ct);
 
-  memset(&newrange.min_addr, 0, sizeof(newrange.min_addr));
-  memset(&newrange.max_addr, 0, sizeof(newrange.max_addr));
+  /* nf_nat_setup_info() reads the whole range, so clear every field
+   * (e.g. base_proto) instead of leaving stack garbage in it. */
+  memset(&newrange, 0, sizeof(newrange));
   newrange.flags       = mr->range[0].flags | NF_NAT_RANGE_MAP_IPS;
   newrange.min_proto   = mr->range[0].min;
   newrange.max_proto   = mr->range[0].max;
