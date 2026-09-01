@@ -153,6 +153,7 @@ int tg_refer_count = 0;
  * different netns do not clobber each other and are torn down
  * independently. */
 struct fullconenat_net {
+  int refcount;             /* number of FULLCONENAT targets in this netns */
   int notifier_registered;
 };
 
@@ -1368,8 +1369,10 @@ static int fullconenat_tg_check(const struct xt_tgchk_param *par)
   }
 
   /* register a conntrack destroy notifier for this netns only.
-   * a netns without any active target never holds a notifier. */
+   * a netns without any active target never holds a notifier, and the
+   * notifier is shared by every target of that netns. */
   fn = net_generic(par->net, fullconenat_net_id);
+  fn->refcount++;
   if (fn->notifier_registered == 0) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) && !defined(CONFIG_NF_CONNTRACK_CHAIN_EVENTS)
     /* since 5.15, nf_conntrack_register_notifier() returns void and
@@ -1408,7 +1411,10 @@ static void fullconenat_tg_destroy(const struct xt_tgdtor_param *par)
   pr_debug("xt_FULLCONENAT: fullconenat_tg_destroy(): tg_refer_count is now %d\n", tg_refer_count);
 
   fn = net_generic(par->net, fullconenat_net_id);
-  if (fn->notifier_registered) {
+  fn->refcount--;
+  /* only tear the notifier down once the last target of this netns is
+   * gone, otherwise the remaining rules lose their active GC. */
+  if (fn->refcount <= 0 && fn->notifier_registered) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) && !defined(CONFIG_NF_CONNTRACK_CHAIN_EVENTS)
     nf_conntrack_unregister_notifier(par->net);
 #else
