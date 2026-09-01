@@ -20,6 +20,7 @@
 #endif
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv4.h>
+#include <linux/jhash.h>
 #if IS_ENABLED(CONFIG_NF_NAT_IPV6) || (IS_ENABLED(CONFIG_IPV6) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0))
 #include <linux/netfilter_ipv6.h>
 #include <linux/ipv6.h>
@@ -40,8 +41,6 @@
 #include <net/netfilter/ipv6/nf_nat_masquerade.h>
 #endif
 #endif
-
-#define HASH_2(x, y) ((x + y) / 2 * (x + y + 1) + y)
 
 #define HASHTABLE_BUCKET_BITS 10
 
@@ -181,7 +180,7 @@ static struct nat_mapping6* allocate_mapping6(const union nf_inet_addr *int_addr
   (p_new->original_tuple_list).next = &(p_new->original_tuple_list);
   (p_new->original_tuple_list).prev = &(p_new->original_tuple_list);
 
-  hash_src = jhash2((u32 *)int_addr->all, 4, (u32)int_port);
+  hash_src = jhash2((const u32 *)int_addr->all, 4, (u32)int_port);
 
   hash_add(mapping6_table_by_ext_port, &p_new->node_by_ext_port, port);
   hash_add(mapping6_table_by_int_src, &p_new->node_by_int_src, hash_src);
@@ -205,7 +204,7 @@ static void add_original_tuple_to_mapping6(struct nat_mapping6 *mapping, const s
 
 static struct nat_mapping6* get_mapping6_by_int_src(const union nf_inet_addr *src_ip, const uint16_t src_port, const union nf_inet_addr *ext_ip) {
   struct nat_mapping6 *p_current;
-  u32 hash_src = jhash2((u32 *)src_ip->all, 4, (u32)src_port);
+  u32 hash_src = jhash2((const u32 *)src_ip->all, 4, (u32)src_port);
 
   hash_for_each_possible(mapping6_table_by_int_src, p_current, node_by_int_src, hash_src) {
     if (nf_inet_addr_cmp(&p_current->int_addr, src_ip) && p_current->int_port == src_port && nf_inet_addr_cmp(&p_current->addr, ext_ip)) {
@@ -218,7 +217,7 @@ static struct nat_mapping6* get_mapping6_by_int_src(const union nf_inet_addr *sr
 
 static struct nat_mapping6* get_mapping6_by_int_src_inrange(const union nf_inet_addr *src_ip, const uint16_t src_port, const union nf_inet_addr *min_ip, const union nf_inet_addr *max_ip) {
   struct nat_mapping6 *p_current;
-  u32 hash_src = jhash2((u32 *)src_ip->all, 4, (u32)src_port);
+  u32 hash_src = jhash2((const u32 *)src_ip->all, 4, (u32)src_port);
 
   hash_for_each_possible(mapping6_table_by_int_src, p_current, node_by_int_src, hash_src) {
     if (nf_inet_addr_cmp(&p_current->int_addr, src_ip) && p_current->int_port == src_port && memcmp(&p_current->addr, min_ip, sizeof(union nf_inet_addr)) >= 0 && memcmp(&p_current->addr, max_ip, sizeof(union nf_inet_addr)) <= 0) {
@@ -382,9 +381,9 @@ static void find_leastused_ip6(const u16 zone, const struct nf_nat_range *range,
   bool full_range;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 3, 0)
-  j = jhash2((u32 *)src, 4, range->flags & NF_NAT_RANGE_PERSISTENT ? 0 : dst->all[3] ^ zone->id);
+  j = jhash2((const u32 *)src, 4, range->flags & NF_NAT_RANGE_PERSISTENT ? 0 : dst->all[3] ^ zone->id);
 #else
-  j = jhash2((u32 *)src, 4, range->flags & NF_NAT_RANGE_PERSISTENT ? 0 : dst->all[3] ^ zone);
+  j = jhash2((const u32 *)src, 4, range->flags & NF_NAT_RANGE_PERSISTENT ? 0 : dst->all[3] ^ zone);
 #endif
 
   full_range = false;
@@ -616,7 +615,7 @@ static struct nat_mapping* allocate_mapping(const __be32 int_addr, const uint16_
   (p_new->original_tuple_list).next = &(p_new->original_tuple_list);
   (p_new->original_tuple_list).prev = &(p_new->original_tuple_list);
 
-  hash_src = HASH_2(int_addr, (u32)int_port);
+  hash_src = jhash_1word((u32)int_addr, (u32)int_port);
 
   hash_add(mapping_table_by_ext_port, &p_new->node_by_ext_port, port);
   hash_add(mapping_table_by_int_src, &p_new->node_by_int_src, hash_src);
@@ -640,7 +639,7 @@ static void add_original_tuple_to_mapping(struct nat_mapping *mapping, const str
 
 static struct nat_mapping* get_mapping_by_int_src(const __be32 src_ip, const uint16_t src_port, const __be32 ext_ip) {
   struct nat_mapping *p_current;
-  u32 hash_src = HASH_2(src_ip, (u32)src_port);
+  u32 hash_src = jhash_1word((u32)src_ip, (u32)src_port);
 
   hash_for_each_possible(mapping_table_by_int_src, p_current, node_by_int_src, hash_src) {
     if (p_current->int_addr == src_ip && p_current->int_port == src_port && p_current->addr == ext_ip) {
@@ -653,7 +652,7 @@ static struct nat_mapping* get_mapping_by_int_src(const __be32 src_ip, const uin
 
 static struct nat_mapping* get_mapping_by_int_src_inrange(const __be32 src_ip, const uint16_t src_port, const __be32 min_ip, const __be32 max_ip) {
   struct nat_mapping *p_current;
-  u32 hash_src = HASH_2(src_ip, (u32)src_port);
+  u32 hash_src = jhash_1word((u32)src_ip, (u32)src_port);
 
   hash_for_each_possible(mapping_table_by_int_src, p_current, node_by_int_src, hash_src) {
     if (p_current->int_addr == src_ip && p_current->int_port == src_port && memcmp(&p_current->addr, &min_ip, sizeof(__be32)) >=0 && memcmp(&p_current->addr, &max_ip, sizeof(__be32)) <= 0) {
