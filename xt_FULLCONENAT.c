@@ -1441,16 +1441,16 @@ static int __init fullconenat_tg_init(void)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0)
   ret = nf_nat_masquerade_inet_register_notifiers();
   if (unlikely(ret))
-    return ret;
+    goto err;
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
   ret = nf_nat_masquerade_ipv4_register_notifier();
   if (unlikely(ret))
-    return ret;
+    goto err;
 #if IS_ENABLED(CONFIG_NF_NAT_MASQUERADE_IPV6)
   ret = nf_nat_masquerade_ipv6_register_notifier();
   if (unlikely(ret)) {
     nf_nat_masquerade_ipv4_unregister_notifier();
-    return ret;
+    goto err;
   }
 #endif
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(3, 18, 0)
@@ -1469,7 +1469,14 @@ static int __init fullconenat_tg_init(void)
 #endif
 #endif
 
-  return xt_register_targets(tg_reg, ARRAY_SIZE(tg_reg));
+  ret = xt_register_targets(tg_reg, ARRAY_SIZE(tg_reg));
+  if (unlikely(ret))
+    goto err;
+  return 0;
+
+err:
+  unregister_pernet_subsys(&fullconenat_net_ops);
+  return ret;
 }
 
 static void fullconenat_tg_exit(void)
